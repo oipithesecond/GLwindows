@@ -1,0 +1,53 @@
+# Build folders
+bin/
+obj/
+
+# VS Code settings (optional)
+.vscode/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Auto-generated files
+*.cache
+*.log
+*.tlog
+*.pdb
+
+# Visual Studio build results
+*.exe
+*.dll
+
+# Backup & temp
+*.bak
+*.tmp
+
+# Rider IDE (if ever used)
+.idea/
+
+# VS-specific
+*.dbmdl
+*.vssscc
+*.vspscc
+.vs/
+
+# Dotnet-specific
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Mac/Unix
+.DS_Store
+*.swp
+
+# WPF generated
+Generated_Code/
+
+# NuGet
+*.nupkg
+*.snupkg
+*.nuspec
+packages/
