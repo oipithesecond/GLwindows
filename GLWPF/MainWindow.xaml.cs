@@ -16,18 +16,18 @@ public partial class MainWindow : Window
     private Dictionary<int, string> trackedNames = new();
     private Dictionary<int, TextBlock> textBlocks = new();
 
-    private Dictionary<string, string> knownGames = new();
-    private HashSet<string> ignoredGames = new();
+    private Dictionary<string, string?> knownGames = new(); // value may be null for ignored apps
+    private Dictionary<string, TimeSpan> totalTimePerGame = new();
     private HashSet<string> pendingPrompts = new();
 
-    private string gamesFilePath = "games.json";
-    private string ignoredFilePath = "ignored.json";
+    private readonly string gamesFilePath = "games.json";
+    private readonly string statsFilePath = "stats.json";
 
     public MainWindow()
     {
         InitializeComponent();
         LoadKnownGames();
-        LoadIgnoredGames();
+        LoadTrackedStats();
 
         appTimer = new System.Timers.Timer(1000);
         appTimer.Elapsed += OnTimedEvent;
@@ -52,11 +52,11 @@ public partial class MainWindow : Window
                 if (procName is "explorer" or "system" or "idle" or "svchost" or "textinputhost" or "syntpenh")
                     continue;
 
-                // Skip if ignored
-                if (ignoredGames.Contains(procName))
+                // Already marked as not to be tracked
+                if (knownGames.TryGetValue(procName, out string? value) && value == "__ignored__")
                     continue;
 
-                // Ask user if this process should be treated as a game
+                // Ask user if this process should be tracked
                 if (!knownGames.ContainsKey(procName))
                 {
                     if (!pendingPrompts.Contains(procName))
@@ -66,7 +66,7 @@ public partial class MainWindow : Window
                         Dispatcher.Invoke(() =>
                         {
                             var result = MessageBox.Show(
-                                $"Do you want to track '{proc.ProcessName}' as a game?",
+                                $"Do you want to track '{procName}' as a game?",
                                 "Track Game?",
                                 MessageBoxButton.YesNo);
 
@@ -77,8 +77,8 @@ public partial class MainWindow : Window
                             }
                             else
                             {
-                                ignoredGames.Add(procName);
-                                SaveIgnoredGames();
+                                knownGames[procName] = "__ignored__";
+                                SaveKnownGames();
                             }
 
                             pendingPrompts.Remove(procName);
@@ -88,13 +88,19 @@ public partial class MainWindow : Window
                     continue;
                 }
 
+                // Skip ignored ones
+                string? displayName = knownGames[procName];
+                if (displayName == "__ignored__" || displayName == null)
+                    continue;
+
                 int pid = proc.Id;
-                string displayName = knownGames[procName];
                 activeGamePids.Add(pid);
 
                 if (!trackedTimes.ContainsKey(pid))
                 {
-                    trackedTimes[pid] = TimeSpan.Zero;
+                    TimeSpan existingTime = totalTimePerGame.ContainsKey(procName) ? totalTimePerGame[procName] : TimeSpan.Zero;
+
+                    trackedTimes[pid] = existingTime;
                     trackedNames[pid] = displayName;
 
                     Dispatcher.Invoke(() =>
@@ -102,20 +108,20 @@ public partial class MainWindow : Window
                         var tb = new TextBlock
                         {
                             FontSize = 14,
-                            Text = $"{displayName} ({pid}): 00:00:00"
+                            Text = $"{displayName} ({pid}): {existingTime:hh\\:mm\\:ss}"
                         };
                         textBlocks[pid] = tb;
                         AppList.Children.Add(tb);
                     });
                 }
-                else
+
+                trackedTimes[pid] = trackedTimes[pid].Add(TimeSpan.FromSeconds(1));
+                totalTimePerGame[procName] = trackedTimes[pid];
+
+                Dispatcher.Invoke(() =>
                 {
-                    trackedTimes[pid] = trackedTimes[pid].Add(TimeSpan.FromSeconds(1));
-                    Dispatcher.Invoke(() =>
-                    {
-                        textBlocks[pid].Text = $"{trackedNames[pid]} ({pid}): {trackedTimes[pid]:hh\\:mm\\:ss}";
-                    });
-                }
+                    textBlocks[pid].Text = $"{trackedNames[pid]} ({pid}): {trackedTimes[pid]:hh\\:mm\\:ss}";
+                });
             }
             catch
             {
@@ -135,6 +141,8 @@ public partial class MainWindow : Window
                 textBlocks.Remove(pid);
             });
         }
+
+        SaveTrackedStats();
     }
 
     private void LoadKnownGames()
@@ -144,7 +152,7 @@ public partial class MainWindow : Window
             if (File.Exists(gamesFilePath))
             {
                 string json = File.ReadAllText(gamesFilePath);
-                knownGames = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
+                knownGames = JsonSerializer.Deserialize<Dictionary<string, string?>>(json) ?? new();
             }
         }
         catch
@@ -163,28 +171,35 @@ public partial class MainWindow : Window
         catch { }
     }
 
-    private void LoadIgnoredGames()
+    private void LoadTrackedStats()
     {
         try
         {
-            if (File.Exists(ignoredFilePath))
+            if (File.Exists(statsFilePath))
             {
-                string json = File.ReadAllText(ignoredFilePath);
-                ignoredGames = JsonSerializer.Deserialize<HashSet<string>>(json) ?? new();
+                string json = File.ReadAllText(statsFilePath);
+                var saved = JsonSerializer.Deserialize<Dictionary<string, double>>(json); // seconds
+
+                if (saved != null)
+                {
+                    foreach (var pair in saved)
+                        totalTimePerGame[pair.Key] = TimeSpan.FromSeconds(pair.Value);
+                }
             }
         }
         catch
         {
-            ignoredGames = new();
+            totalTimePerGame = new();
         }
     }
 
-    private void SaveIgnoredGames()
+    private void SaveTrackedStats()
     {
         try
         {
-            string json = JsonSerializer.Serialize(ignoredGames, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(ignoredFilePath, json);
+            var data = totalTimePerGame.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.TotalSeconds);
+            string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(statsFilePath, json);
         }
         catch { }
     }
@@ -194,7 +209,7 @@ public partial class MainWindow : Window
         appTimer.Stop();
         appTimer.Dispose();
         SaveKnownGames();
-        SaveIgnoredGames();
+        SaveTrackedStats();
         base.OnClosed(e);
     }
 }
