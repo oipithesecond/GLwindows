@@ -51,3 +51,6 @@ Generated_Code/
 *.snupkg
 *.nuspec
 packages/
+
+games.json
+ignored.json

@@ -4,27 +4,32 @@ using System.Timers;
 using System.Collections.Generic;
 using System.Windows.Controls;
 using System.Linq;
+using System.IO;
+using System.Text.Json;
 
 namespace GLWPF;
 
 public partial class MainWindow : Window
 {
     private System.Timers.Timer appTimer;
+    private Dictionary<int, TimeSpan> trackedTimes = new();
+    private Dictionary<int, string> trackedNames = new();
+    private Dictionary<int, TextBlock> textBlocks = new();
 
-    private Dictionary<int, TimeSpan> processTimes = new();
-    private Dictionary<int, string> processNames = new();
-    private Dictionary<int, TextBlock> processTextBlocks = new();
+    private Dictionary<string, string> knownGames = new();
+    private HashSet<string> ignoredGames = new();
+    private HashSet<string> pendingPrompts = new();
 
-    private HashSet<string> systemProcesses = new()
-    {
-        "explorer", "svchost", "TextInputHost", "Idle", "System", "SynTPEnh", "GLWPF"
-    };
+    private string gamesFilePath = "games.json";
+    private string ignoredFilePath = "ignored.json";
 
     public MainWindow()
     {
         InitializeComponent();
+        LoadKnownGames();
+        LoadIgnoredGames();
 
-        appTimer = new System.Timers.Timer(1000); // 1 second
+        appTimer = new System.Timers.Timer(1000);
         appTimer.Elapsed += OnTimedEvent;
         appTimer.Start();
     }
@@ -32,84 +37,164 @@ public partial class MainWindow : Window
     private void OnTimedEvent(object? sender, ElapsedEventArgs e)
     {
         var currentProcesses = Process.GetProcesses();
-        var activeProcessIds = new HashSet<int>();
+        var activeGamePids = new HashSet<int>();
 
         foreach (var proc in currentProcesses)
         {
             try
             {
-                // ❌ Skip if no visible window
                 if (proc.MainWindowHandle == IntPtr.Zero)
                     continue;
 
-                // ❌ Skip if window title is empty
-                if (string.IsNullOrWhiteSpace(proc.MainWindowTitle))
+                string procName = proc.ProcessName.ToLower();
+
+                // Skip common system/background processes
+                if (procName is "explorer" or "system" or "idle" or "svchost" or "textinputhost" or "syntpenh")
                     continue;
 
-                // ❌ Skip known system-related processes
-                if (systemProcesses.Contains(proc.ProcessName))
+                // Skip if ignored
+                if (ignoredGames.Contains(procName))
                     continue;
+
+                // Ask user if this process should be treated as a game
+                if (!knownGames.ContainsKey(procName))
+                {
+                    if (!pendingPrompts.Contains(procName))
+                    {
+                        pendingPrompts.Add(procName);
+
+                        Dispatcher.Invoke(() =>
+                        {
+                            var result = MessageBox.Show(
+                                $"Do you want to track '{proc.ProcessName}' as a game?",
+                                "Track Game?",
+                                MessageBoxButton.YesNo);
+
+                            if (result == MessageBoxResult.Yes)
+                            {
+                                knownGames[procName] = char.ToUpper(procName[0]) + procName.Substring(1);
+                                SaveKnownGames();
+                            }
+                            else
+                            {
+                                ignoredGames.Add(procName);
+                                SaveIgnoredGames();
+                            }
+
+                            pendingPrompts.Remove(procName);
+                        });
+                    }
+
+                    continue;
+                }
 
                 int pid = proc.Id;
-                string name = proc.ProcessName;
-                activeProcessIds.Add(pid);
+                string displayName = knownGames[procName];
+                activeGamePids.Add(pid);
 
-                if (!processTimes.ContainsKey(pid))
+                if (!trackedTimes.ContainsKey(pid))
                 {
-                    processTimes[pid] = TimeSpan.Zero;
-                    processNames[pid] = name;
+                    trackedTimes[pid] = TimeSpan.Zero;
+                    trackedNames[pid] = displayName;
 
                     Dispatcher.Invoke(() =>
                     {
                         var tb = new TextBlock
                         {
                             FontSize = 14,
-                            Text = $"{name} ({pid}): 00:00:00"
+                            Text = $"{displayName} ({pid}): 00:00:00"
                         };
-                        processTextBlocks[pid] = tb;
+                        textBlocks[pid] = tb;
                         AppList.Children.Add(tb);
                     });
                 }
                 else
                 {
-                    processTimes[pid] = processTimes[pid].Add(TimeSpan.FromSeconds(1));
+                    trackedTimes[pid] = trackedTimes[pid].Add(TimeSpan.FromSeconds(1));
                     Dispatcher.Invoke(() =>
                     {
-                        processTextBlocks[pid].Text = $"{processNames[pid]} ({pid}): {processTimes[pid]:hh\\:mm\\:ss}";
+                        textBlocks[pid].Text = $"{trackedNames[pid]} ({pid}): {trackedTimes[pid]:hh\\:mm\\:ss}";
                     });
                 }
             }
             catch
             {
-                // Access denied processes are ignored
                 continue;
             }
         }
 
-        // Clean up closed processes
-        var closedPids = new List<int>();
-        foreach (var pid in processTimes.Keys)
-        {
-            if (!activeProcessIds.Contains(pid))
-                closedPids.Add(pid);
-        }
-
+        // Remove closed processes
+        var closedPids = trackedTimes.Keys.Except(activeGamePids).ToList();
         foreach (var pid in closedPids)
         {
-            processTimes.Remove(pid);
-            processNames.Remove(pid);
+            trackedTimes.Remove(pid);
+            trackedNames.Remove(pid);
             Dispatcher.Invoke(() =>
             {
-                AppList.Children.Remove(processTextBlocks[pid]);
-                processTextBlocks.Remove(pid);
+                AppList.Children.Remove(textBlocks[pid]);
+                textBlocks.Remove(pid);
             });
         }
+    }
+
+    private void LoadKnownGames()
+    {
+        try
+        {
+            if (File.Exists(gamesFilePath))
+            {
+                string json = File.ReadAllText(gamesFilePath);
+                knownGames = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
+            }
+        }
+        catch
+        {
+            knownGames = new();
+        }
+    }
+
+    private void SaveKnownGames()
+    {
+        try
+        {
+            string json = JsonSerializer.Serialize(knownGames, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(gamesFilePath, json);
+        }
+        catch { }
+    }
+
+    private void LoadIgnoredGames()
+    {
+        try
+        {
+            if (File.Exists(ignoredFilePath))
+            {
+                string json = File.ReadAllText(ignoredFilePath);
+                ignoredGames = JsonSerializer.Deserialize<HashSet<string>>(json) ?? new();
+            }
+        }
+        catch
+        {
+            ignoredGames = new();
+        }
+    }
+
+    private void SaveIgnoredGames()
+    {
+        try
+        {
+            string json = JsonSerializer.Serialize(ignoredGames, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(ignoredFilePath, json);
+        }
+        catch { }
     }
 
     protected override void OnClosed(EventArgs e)
     {
         appTimer.Stop();
         appTimer.Dispose();
+        SaveKnownGames();
+        SaveIgnoredGames();
         base.OnClosed(e);
     }
 }

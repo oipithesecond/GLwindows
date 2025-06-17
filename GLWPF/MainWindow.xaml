@@ -8,12 +8,15 @@
         Title="GameLogger"
         Height="450"
         Width="800">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel x:Name="AppList"
-                Margin="20">
-            <TextBlock Text="Tracking the following apps:"
-                       FontSize="20"
-                       Margin="0,0,0,10"/>
-        </StackPanel>
-    </ScrollViewer>
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="AppList"
+                        Orientation="Vertical"
+                        Margin="20">
+                <TextBlock Text="Tracking the following apps:"
+                           FontSize="20"
+                           Margin="0,0,0,10"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </Window>
