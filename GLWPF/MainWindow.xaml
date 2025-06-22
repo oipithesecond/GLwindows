@@ -8,6 +8,7 @@
         Title="GameLogger"
         Height="450"
         Width="800">
+
     <Grid>
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="AppList"

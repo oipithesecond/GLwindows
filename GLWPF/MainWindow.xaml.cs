@@ -1,11 +1,19 @@
 ﻿using System;
 using System.Linq;
-using System.Windows;             // For Window
-using System.Windows.Controls;   // For TextBlock
+using System.Windows;
+using System.Windows.Controls;
 using System.Diagnostics;
 using System.Collections.Generic;
-using System.Timers;             // For ElapsedEventArgs
-using GLWPF.Logic;               // For your modular logic
+using System.Timers;
+using GLWPF.Logic;
+using System.Windows.Forms; // For NotifyIcon
+using System.Drawing;      // For Icon
+
+using WpfApp = System.Windows.Application;
+using WpfMessageBox = System.Windows.MessageBox;
+using FormsApp = System.Windows.Forms.Application;
+using FormsMessageBox = System.Windows.Forms.MessageBox;
+using FormsNotifyIcon = System.Windows.Forms.NotifyIcon;
 
 namespace GLWPF
 {
@@ -23,9 +31,10 @@ namespace GLWPF
         private const string GamesFile = "games.json";
         private const string IgnoredFile = "ignored.json";
         private const string StatsFile = "stats.json";
-        private readonly System.Timers.Timer statsUploadTimer = new(1 * 5 * 1000); // every 5 seconds
+        private readonly System.Timers.Timer statsUploadTimer = new(1 * 5 * 1000);
         private string StatsUploadUrl;
 
+        private NotifyIcon? trayIcon;
 
         public MainWindow()
         {
@@ -33,7 +42,6 @@ namespace GLWPF
 
             EnvLoader.Load();
             StatsUploadUrl = EnvLoader.Get("STATS_UPLOAD_URL") ?? "";
-
 
             knownGames = FileManager.LoadKnownGames(GamesFile);
             ignoredGames = FileManager.LoadIgnoredGames(IgnoredFile);
@@ -49,6 +57,38 @@ namespace GLWPF
             };
             statsUploadTimer.Start();
 
+            trayIcon = new NotifyIcon
+            {
+                Icon = new Icon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "appicon.ico")),
+                Visible = true,
+                Text = "GameLogger"
+            };
+
+            trayIcon.DoubleClick += (_, _) => ShowFromTray();
+
+            trayIcon.ContextMenuStrip = new ContextMenuStrip();
+            trayIcon.ContextMenuStrip.Items.Add("Show", null, (_, _) => ShowFromTray());
+            trayIcon.ContextMenuStrip.Items.Add("Exit", null, (_, _) => ExitApp());
+        }
+
+        private void ShowFromTray()
+        {
+            Show();
+            WindowState = WindowState.Normal;
+            Activate();
+        }
+
+        private void ExitApp()
+        {
+            trayIcon?.Dispose();
+            trayIcon = null;
+            WpfApp.Current.Shutdown();
+        }
+
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            e.Cancel = true;
+            Hide();
         }
 
         private void OnTimedEvent(object? sender, ElapsedEventArgs e)
@@ -79,7 +119,7 @@ namespace GLWPF
                             {
                                 pendingPrompts.Add(procName);
 
-                                var result = MessageBox.Show($"Track '{proc.ProcessName}' as a game?", "Track Game?", MessageBoxButton.YesNo);
+                                var result = WpfMessageBox.Show($"Track '{proc.ProcessName}' as a game?", "Track Game?", MessageBoxButton.YesNo);
                                 if (result == MessageBoxResult.Yes)
                                 {
                                     knownGames[procName] = char.ToUpper(procName[0]) + procName.Substring(1);
@@ -125,7 +165,6 @@ namespace GLWPF
                     catch { }
                 }
 
-                // Cleanup closed apps
                 var closed = gameTracker.TrackedTimes.Keys.Except(activeGamePids).ToList();
                 foreach (var pid in closed)
                 {
@@ -144,14 +183,12 @@ namespace GLWPF
 
         protected override void OnClosed(EventArgs e)
         {
-            appTimer.Stop();
-            appTimer.Dispose();
-            FileManager.SaveKnownGames(GamesFile, knownGames);
-            FileManager.SaveIgnoredGames(IgnoredFile, ignoredGames);
-            FileManager.SaveStats(StatsFile, gameTracker.GetSerializableStats());
+            base.OnClosed(e);
+            trayIcon?.Dispose();
             statsUploadTimer.Stop();
             statsUploadTimer.Dispose();
-            base.OnClosed(e);
+            appTimer.Stop();
+            appTimer.Dispose();
         }
     }
 }
