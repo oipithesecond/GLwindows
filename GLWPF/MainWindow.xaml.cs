@@ -23,10 +23,17 @@ namespace GLWPF
         private const string GamesFile = "games.json";
         private const string IgnoredFile = "ignored.json";
         private const string StatsFile = "stats.json";
+        private readonly System.Timers.Timer statsUploadTimer = new(1 * 5 * 1000); // every 5 seconds
+        private string StatsUploadUrl;
+
 
         public MainWindow()
         {
             InitializeComponent();
+
+            EnvLoader.Load();
+            StatsUploadUrl = EnvLoader.Get("STATS_UPLOAD_URL") ?? "";
+
 
             knownGames = FileManager.LoadKnownGames(GamesFile);
             ignoredGames = FileManager.LoadIgnoredGames(IgnoredFile);
@@ -34,6 +41,14 @@ namespace GLWPF
 
             appTimer.OnTick += OnTimedEvent;
             appTimer.Start();
+
+            statsUploadTimer.Elapsed += async (_, _) =>
+            {
+                if (!string.IsNullOrWhiteSpace(StatsUploadUrl))
+                    await HttpClientUploader.UploadStatsAsync(StatsFile, StatsUploadUrl);
+            };
+            statsUploadTimer.Start();
+
         }
 
         private void OnTimedEvent(object? sender, ElapsedEventArgs e)
@@ -134,6 +149,8 @@ namespace GLWPF
             FileManager.SaveKnownGames(GamesFile, knownGames);
             FileManager.SaveIgnoredGames(IgnoredFile, ignoredGames);
             FileManager.SaveStats(StatsFile, gameTracker.GetSerializableStats());
+            statsUploadTimer.Stop();
+            statsUploadTimer.Dispose();
             base.OnClosed(e);
         }
     }
