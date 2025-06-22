@@ -6,17 +6,34 @@
         xmlns:local="clr-namespace:GLWPF"
         mc:Ignorable="d"
         Title="GameLogger"
-        Height="450"
-        Width="800">
+        Height="600"
+        Width="800"
+        Background="#1e1e1e"
+        Foreground="White"
+        WindowStartupLocation="CenterScreen">
 
     <Grid>
         <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="AppList"
-                        Orientation="Vertical"
-                        Margin="20">
-                <TextBlock Text="Tracking the following apps:"
-                           FontSize="20"
-                           Margin="0,0,0,10"/>
+            <StackPanel Margin="30"
+                        Background="#1e1e1e">
+                <TextBlock Text="🎮 Currently Tracking Games"
+                           FontSize="24"
+                           Foreground="White"
+                           FontWeight="Bold"
+                           Margin="0,0,0,20"/>
+                <!-- Game List Container -->
+                <Border Background="#2a2a2a"
+                        Padding="10"
+                        CornerRadius="6">
+                    <StackPanel x:Name="AppList"
+                                Orientation="Vertical"/>
+                </Border>
+
+                <TextBlock Text="GameLogger is running in the background. You can close this window"
+                           FontSize="14"
+                           Foreground="Gray"
+                           Margin="0,30,0,0"
+                           HorizontalAlignment="Center"/>
             </StackPanel>
         </ScrollViewer>
     </Grid>

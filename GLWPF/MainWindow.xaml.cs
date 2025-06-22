@@ -107,7 +107,7 @@ namespace GLWPF
 
                         string procName = proc.ProcessName.ToLower();
 
-                        if (procName is "explorer" or "system" or "idle" or "svchost" or "textinputhost" or "syntpenh")
+                        if (procName is "explorer" or "system" or "idle" or "svchost" or "textinputhost" or "syntpenh" or "GLWPF")
                             continue;
 
                         if (ignoredGames.Contains(procName))
@@ -151,7 +151,7 @@ namespace GLWPF
                             var tb = new TextBlock
                             {
                                 FontSize = 14,
-                                Text = $"{displayName} ({pid}): {previousTime:hh\\:mm\\:ss}"
+                                Text = $"{displayName} : {previousTime:hh\\:mm\\:ss}"
                             };
                             textBlocks[pid] = tb;
                             AppList.Children.Add(tb);
